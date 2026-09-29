@@ -1,0 +1,9 @@
+# Generated per-platform binaries are already embedded in the signed package.
+dist/runtimes/
+dist/*-unsigned.s2plugin
+dist/*-signed.s2plugin
+
+# Local Go/build noise.
+*.test
+*.out
+coverage.out

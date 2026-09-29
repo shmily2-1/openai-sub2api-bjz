@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "id": "oai-basispoints",
+  "name": "OpenAI Basis Points",
+  "version": "0.1.3",
+  "description": "Sub2API transport plugin that adapts OpenAI OAuth Responses requests to the Basis Points endpoint.",
+  "author": "Jaxson Wang",
+  "requires": {
+    "sub2api": ">=0.2.9 <0.3.0",
+    "recommended_sub2api_version": "0.2.9",
+    "tested_sub2api_versions": ["0.2.9"],
+    "plugin_protocol": 1,
+    "transport_api": 1,
+    "ui_bridge": 1
+  },
+  "capabilities": [
+    {
+      "id": "openai.oauth.outbound_transport.v1",
+      "platform": "openai",
+      "account_type": "oauth"
+    }
+  ],
+  "runtimes": {
+    "linux-amd64": { "path": "runtimes/linux-amd64/plugin" },
+    "linux-arm64": { "path": "runtimes/linux-arm64/plugin" },
+    "windows-amd64": { "path": "runtimes/windows-amd64/plugin.exe" },
+    "windows-arm64": { "path": "runtimes/windows-arm64/plugin.exe" },
+    "darwin-amd64": { "path": "runtimes/darwin-amd64/plugin" },
+    "darwin-arm64": { "path": "runtimes/darwin-arm64/plugin" }
+  },
+  "ui": { "entrypoint": "ui/index.html" },
+  "files": {}
+}

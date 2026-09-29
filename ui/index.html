@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>OpenAI Basis Points</title>
+  <style>
+    :root { color-scheme: light dark; font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; padding: 20px; background: #f7f8fa; color: #1f2937; }
+    @media (prefers-color-scheme: dark) { body { background: #111827; color: #e5e7eb; } input, textarea { background: #1f2937; color: #f9fafb; border-color: #4b5563; } .card { background: #1f2937; border-color: #374151; } .muted { color: #9ca3af; } }
+    .card { max-width: 760px; margin: 0 auto; padding: 20px; background: white; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 28px rgb(15 23 42 / 7%); }
+    h1 { margin: 0 0 6px; font-size: 20px; }
+    h2 { margin: 22px 0 8px; font-size: 15px; }
+    .muted { color: #6b7280; margin: 0 0 16px; }
+    label { display: block; margin: 13px 0 6px; font-weight: 600; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid #d1d5db; border-radius: 7px; background: #fff; color: #111827; font: inherit; }
+    textarea { min-height: 90px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .hint { margin-top: 4px; font-size: 12px; color: #6b7280; }
+    .actions { display: flex; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+    button { border: 0; border-radius: 7px; padding: 9px 14px; cursor: pointer; font: inherit; background: #2563eb; color: white; }
+    button.secondary { background: #6b7280; }
+    button:disabled { opacity: .6; cursor: wait; }
+    #message { min-height: 22px; margin-top: 14px; white-space: pre-wrap; }
+    #status { margin-top: 15px; padding: 10px; border-radius: 7px; background: rgb(148 163 184 / 15%); font-size: 12px; white-space: pre-wrap; }
+    .ok { color: #15803d; } .error { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>OpenAI Basis Points</h1>
+    <p class="muted">为 Sub2API 的 OpenAI OAuth 出站账号配置 Basis Points 上游。插件不保存 OAuth token。</p>
+    <form id="config-form">
+      <label for="responses_url">Responses URL</label>
+      <input id="responses_url" autocomplete="off" spellcheck="false" required>
+      <div class="hint">仅允许绝对 HTTP(S) URL；通常保持默认值。</div>
+
+      <label for="upstream_model">默认上游模型</label>
+      <input id="upstream_model" autocomplete="off" spellcheck="false" required>
+
+      <label for="models">客户端模型别名</label>
+      <input id="models" autocomplete="off" spellcheck="false" placeholder="gpt-6-astra-basispoints,gpt-6-sol,gpt-6-luna,gpt-6-terra,gpt-6-astra">
+      <div class="hint">多个别名使用逗号分隔；默认已启用 Astra、Sol、Luna、Terra；未填写模型时使用第一个别名。</div>
+
+      <label for="model_mappings">模型映射 JSON</label>
+      <textarea id="model_mappings" spellcheck="false" placeholder='{"gpt-6-astra-basispoints":"gpt-6-astra","gpt-6-sol":"gpt-6-sol","gpt-6-luna":"gpt-6-luna","gpt-6-terra":"gpt-6-terra","gpt-6-astra":"gpt-6-astra"}'></textarea>
+
+      <div class="grid">
+        <div><label for="timeout_seconds">超时（秒）</label><input id="timeout_seconds" type="number" min="10" max="1800"></div>
+        <div><label for="auth_mode">认证模式</label><input id="auth_mode" autocomplete="off" spellcheck="false"></div>
+        <div><label for="max_response_bytes">最大响应字节数</label><input id="max_response_bytes" type="number" min="65536" max="134217728"></div>
+        <div><label for="max_request_bytes">最大请求字节数</label><input id="max_request_bytes" type="number" min="65536" max="134217728"></div>
+      </div>
+
+      <label for="tools_version_id">Basis Points 工具目录版本（可选）</label>
+      <input id="tools_version_id" autocomplete="off" spellcheck="false">
+
+      <div class="actions">
+        <button type="submit" id="save">保存配置</button>
+        <button type="button" class="secondary" id="test">测试已保存配置</button>
+        <button type="button" class="secondary" id="refresh">刷新</button>
+      </div>
+    </form>
+    <div id="message" role="status"></div>
+    <div id="status">正在连接插件状态…</div>
+  </main>
+<script>
+(function () {
+  "use strict";
+  var params = new URLSearchParams(location.hash.slice(1));
+  var bridgeToken = params.get("bridge_token") || "";
+  var pending = new Map();
+  var form = document.getElementById("config-form");
+  var message = document.getElementById("message");
+  var status = document.getElementById("status");
+  var buttons = Array.prototype.slice.call(document.querySelectorAll("button"));
+
+  function show(text, kind) {
+    message.textContent = text || "";
+    message.className = kind || "";
+  }
+  function post(type, payload) {
+    var requestId = "ui-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+    parent.postMessage(Object.assign({ source: "sub2api-plugin-ui", bridge_token: bridgeToken, type: type, request_id: requestId }, payload || {}), "*");
+  }
+  function request(type, payload) {
+    return new Promise(function (resolve, reject) {
+      var requestId = "ui-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+      var timer = setTimeout(function () {
+        pending.delete(requestId);
+        reject(new Error("宿主响应超时"));
+      }, 10000);
+      pending.set(requestId, { resolve: resolve, reject: reject, timer: timer });
+      post(type, Object.assign({}, payload || {}, { request_id: requestId }));
+    });
+  }
+  function setBusy(value) { buttons.forEach(function (button) { button.disabled = value; }); }
+  function configFromForm() {
+    var mappings;
+    try { mappings = JSON.parse(document.getElementById("model_mappings").value || "{}"); }
+    catch (error) { throw new Error("模型映射必须是有效 JSON"); }
+    if (!mappings || Array.isArray(mappings) || typeof mappings !== "object") throw new Error("模型映射必须是 JSON 对象");
+    return {
+      responses_url: document.getElementById("responses_url").value.trim(),
+      upstream_model: document.getElementById("upstream_model").value.trim(),
+      models: document.getElementById("models").value.split(",").map(function (value) { return value.trim(); }).filter(Boolean),
+      model_mappings: mappings,
+      timeout_seconds: Number(document.getElementById("timeout_seconds").value),
+      max_response_bytes: Number(document.getElementById("max_response_bytes").value),
+      max_request_bytes: Number(document.getElementById("max_request_bytes").value),
+      auth_mode: document.getElementById("auth_mode").value.trim(),
+      tools_version_id: document.getElementById("tools_version_id").value.trim()
+    };
+  }
+  function renderConfig(config) {
+    config = config || {};
+    document.getElementById("responses_url").value = config.responses_url || "";
+    document.getElementById("upstream_model").value = config.upstream_model || "";
+    document.getElementById("models").value = Array.isArray(config.models) ? config.models.join(",") : "";
+    document.getElementById("model_mappings").value = JSON.stringify(config.model_mappings || {}, null, 2);
+    document.getElementById("timeout_seconds").value = config.timeout_seconds || 300;
+    document.getElementById("max_response_bytes").value = config.max_response_bytes || 67108864;
+    document.getElementById("max_request_bytes").value = config.max_request_bytes || 33554432;
+    document.getElementById("auth_mode").value = config.auth_mode || "chatgpt";
+    document.getElementById("tools_version_id").value = config.tools_version_id || "";
+  }
+  function handleResponse(data) {
+    if (!data || data.source !== "sub2api-plugin-host" || data.bridge_token !== bridgeToken || !data.request_id) return;
+    var item = pending.get(data.request_id);
+    if (!item) return;
+    pending.delete(data.request_id); clearTimeout(item.timer);
+    if (data.ok === false) item.reject(new Error(data.error && data.error.message ? data.error.message : "宿主请求失败"));
+    else item.resolve(data);
+  }
+  window.addEventListener("message", function (event) {
+    if (event.source !== parent) return;
+    handleResponse(event.data);
+  });
+  window.addEventListener("pagehide", function () {
+    pending.forEach(function (item) { clearTimeout(item.timer); });
+    pending.clear();
+  });
+  async function load() {
+    try { var reply = await request("config.load"); renderConfig(reply.config); show("配置已加载", "ok"); }
+    catch (error) { show(error.message, "error"); }
+  }
+  async function save() {
+    var config;
+    try { config = configFromForm(); } catch (error) { show(error.message, "error"); return null; }
+    setBusy(true);
+    try { var reply = await request("config.save", { config: config }); renderConfig(reply.config || config); show("配置已保存", "ok"); return reply; }
+    catch (error) { show(error.message, "error"); return null; }
+    finally { setBusy(false); }
+  }
+  async function test() {
+    setBusy(true);
+    try { var reply = await request("config.test"); show(reply.result && reply.result.message ? reply.result.message : "测试完成", reply.result && reply.result.success ? "ok" : "error"); }
+    catch (error) { show(error.message, "error"); }
+    finally { setBusy(false); }
+  }
+  async function refreshStatus() {
+    try { var reply = await request("plugin.status"); status.textContent = reply.result ? JSON.stringify(reply.result, null, 2) : "状态无数据"; }
+    catch (error) { status.textContent = error.message; }
+  }
+  form.addEventListener("submit", function (event) { event.preventDefault(); save(); });
+  document.getElementById("test").addEventListener("click", test);
+  document.getElementById("refresh").addEventListener("click", load);
+  post("sub2api.plugin.ready");
+  post("ui.resize", { height: 760 });
+  load(); refreshStatus(); setInterval(refreshStatus, 10000);
+}());
+</script>
+</body>
+</html>

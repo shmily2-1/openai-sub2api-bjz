@@ -1,0 +1,17 @@
+{
+  "responses_url": "https://bps.openai.com/basispoints/api/responses",
+  "upstream_model": "gpt-6-astra",
+  "models": ["gpt-6-astra-basispoints", "gpt-6-sol", "gpt-6-luna", "gpt-6-terra", "gpt-6-astra"],
+  "model_mappings": {
+    "gpt-6-astra-basispoints": "gpt-6-astra",
+    "gpt-6-sol": "gpt-6-sol",
+    "gpt-6-luna": "gpt-6-luna",
+    "gpt-6-terra": "gpt-6-terra",
+    "gpt-6-astra": "gpt-6-astra"
+  },
+  "timeout_seconds": 300,
+  "max_response_bytes": 67108864,
+  "max_request_bytes": 33554432,
+  "auth_mode": "chatgpt",
+  "tools_version_id": ""
+}
